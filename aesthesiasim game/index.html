@@ -684,7 +684,7 @@ setDiff(diff);updSoundBtn();
 /* ================== ONLINE (Supabase) ================== */
 const SB_URL='https://azptytqxijtrlumxowrm.supabase.co';
 const SB_KEY='sb_publishable_OFMpmcKe5l6MbyGqRa4xgQ_Y1vvgH5V';
-const APP_VERSION='1.5';
+const APP_VERSION='1.6';
 /* ---- PRO (Whop) ---- */
 const FREE_CASES=['sara'],FREE_EXAMS=['ex_as'];
 const WHOP_MONTHLY_URL='https://whop.com/checkout/plan_lvmRqqocbE1Co';
@@ -700,20 +700,47 @@ function showUpgrade(){
   else if(!sbUser) body=`<p>Create a free account first — Pro is unlocked on your account, so use the <b>same email</b> at checkout.</p><div class="row"><button class="btn" onclick="hideModal()">Later</button><button class="btn primary" onclick="hideModal();openAuth('signup')">Create free account</button></div>`;
   else{
     const btn=(url,label,sub,primary)=>url?`<a class="btn ${primary?'primary':''}" style="flex:1;text-align:center;text-decoration:none;display:block;color:${primary?'#05201d':'var(--text)'}" href="${url}" target="_blank" rel="noopener" onclick="setTimeout(()=>proChecking(),800)">${label}<br><small style="font-weight:500;opacity:.8">${sub}</small></a>`:`<button class="btn" style="flex:1;opacity:.5" disabled>${label}<br><small>link not set</small></button>`;
-    body=`<p style="margin:4px 0 10px">Pay on Whop with <b>${esc(sbUser.email)}</b> — Pro unlocks automatically within a minute.</p>
+    body=`<p style="margin:4px 0 10px">Pay on Whop with <b>${esc(sbUser.email)}</b> — Pro unlocks on this page automatically, usually within seconds — keep this tab open.</p>
      <div class="row">${btn(WHOP_MONTHLY_URL,PRICE_MONTHLY,'cancel anytime',false)}${btn(WHOP_LIFETIME_URL,PRICE_LIFETIME,'pay once, keep forever',true)}</div>
      <div class="row"><button class="btn small" onclick="refreshPro()">I've paid — check my Pro status</button><button class="btn small" onclick="hideModal()">Not now</button></div><div class="authMsg" id="proMsg"></div>`;
   }
   showModal(`<h2>⭐ AesthesiaSim Pro</h2><ul style="font-size:14px;line-height:1.6;padding-left:18px;margin:6px 0 10px">${perks.map(x=>`<li>${x}</li>`).join('')}</ul>${body}`);
 }
-async function refreshPro(){
+async function refreshPro(silent){
   if(!sb||!sbUser) return;
+  const was=isPro();
   try{const {data}=await sb.from('profiles').select('*').eq('id',sbUser.id).maybeSingle();if(data) sbProfile=data;}catch(e){}
-  updAcct();const m=$('#proMsg');
-  if(isPro()){if(m){m.className='authMsg ok';m.textContent='Pro unlocked ✓ Enjoy!';}setTimeout(()=>{hideModal();if($('#cases').classList.contains('active'))openCases();if($('#excases').classList.contains('active'))openExams();},900);}
-  else if(m){m.className='authMsg err';m.textContent='Not active yet — payments can take a minute. Make sure you paid with '+sbUser.email+'.';}
+  updAcct();
+  if(isPro()){if(!was||!silent) proUnlocked();return;}
+  const m=$('#proMsg');
+  if(m){if(silent){m.className='authMsg';m.textContent='⏳ Waiting for Whop to confirm your payment… this page unlocks by itself.';}
+  else{m.className='authMsg err';m.textContent='Not active yet. Make sure you paid with '+sbUser.email+' — it unlocks the moment Whop confirms.';}}
 }
-function proChecking(){let n=0;const iv=setInterval(()=>{n++;refreshPro();if(isPro()||n>20)clearInterval(iv);},6000);}
+let proWatch=null,proChan=null;
+function proPendingRecent(){try{const t=+sessionStorage.getItem('proPending');return t&&Date.now()-t<30*60e3;}catch(e){return false;}}
+function proChecking(){
+  try{sessionStorage.setItem('proPending',String(Date.now()));}catch(e){}
+  if(proWatch) return;let n=0;
+  proWatch=setInterval(()=>{n++;if(isPro()||n>144){clearInterval(proWatch);proWatch=null;return;}refreshPro(true);},2500);
+}
+function proUnlocked(){
+  try{sessionStorage.removeItem('proPending');}catch(e){}
+  if(proWatch){clearInterval(proWatch);proWatch=null;}
+  if(location.search.includes('paid')) history.replaceState(null,'',location.pathname);
+  updAcct();
+  if($('#cases').classList.contains('active'))openCases();
+  if($('#excases').classList.contains('active'))openExams();
+  showModal(`<h2>🎉 Pro unlocked!</h2><p>Thanks for supporting AesthesiaSim. Every case and every exam is now open on <b>${esc(sbUser.email)}</b>.</p><div class="row"><button class="btn primary" onclick="hideModal();openCases()">Play a Pro case</button></div>`);
+}
+function subPro(){
+  if(!sb) return;
+  if(proChan){try{sb.removeChannel(proChan);}catch(e){}proChan=null;}
+  if(!sbUser) return;
+  try{proChan=sb.channel('pro-'+sbUser.id).on('postgres_changes',{event:'UPDATE',schema:'public',table:'profiles',filter:'id=eq.'+sbUser.id},p=>{const was=isPro();sbProfile=Object.assign(sbProfile||{},p.new||{});updAcct();if(!was&&isPro())proUnlocked();}).subscribe();}catch(e){}
+}
+function proOnReturn(){if(sbUser&&!isPro()&&(proPendingRecent()||location.search.includes('paid')))refreshPro(true);}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)proOnReturn();});
+window.addEventListener('focus',proOnReturn);
 let sb=null,sbUser=null,sbProfile=null,authMode='signin';
 const memStore={};
 const safeStorage={getItem:k=>{try{return localStorage.getItem(k)}catch(e){return memStore[k]??null}},setItem:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){memStore[k]=v}},removeItem:k=>{try{localStorage.removeItem(k)}catch(e){delete memStore[k]}}};
@@ -736,7 +763,7 @@ function initSupabase(){
 async function setUser(u){
   const changed=(u&&u.id)!==(sbUser&&sbUser.id);
   sbUser=u;
-  if(!u){sbProfile=null;updAcct();return;}
+  if(!u){sbProfile=null;subPro();updAcct();return;}
   if(changed||!sbProfile){
     try{
       const {data}=await sb.from('profiles').select('*').eq('id',u.id).maybeSingle();
@@ -749,6 +776,8 @@ async function setUser(u){
       if(sbProfile) Object.assign(sbProfile,upd);
     }catch(e){}
     flushPending();
+    subPro();
+    if(!isPro()&&(proPendingRecent()||location.search.includes('paid'))) proChecking();
   }
   updAcct();
   if($('#auth').classList.contains('active')&&authMode!=='newpass') show('home');
