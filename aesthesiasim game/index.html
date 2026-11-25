@@ -303,6 +303,7 @@ h1,h2,h3{margin:0}
   <div class="homeBtns">
     <button class="btn primary" onclick="openCases()">▶  Play</button>
     <button class="btn" style="border-color:#3a6b6a;color:#bff5ec" onclick="openExams()">🩺  Clinical exam · CVS</button>
+    <button class="btn" id="upgradeBtn" style="background:linear-gradient(90deg,#3a2f0a,#3a240a);border-color:#8a6a1a;color:#f5d77a" onclick="showUpgrade()">⭐  Go Pro — unlock all cases</button>
     <button class="btn" onclick="openBoard()">🏆  Leaderboard</button>
     <button class="btn" onclick="openStats()">📊  My stats</button>
     <button class="btn" id="adminBtn" style="display:none;border-color:#7a6a2a;color:#f5d77a" onclick="openAdmin()">🛠  Admin dashboard</button>
@@ -683,7 +684,36 @@ setDiff(diff);updSoundBtn();
 /* ================== ONLINE (Supabase) ================== */
 const SB_URL='https://azptytqxijtrlumxowrm.supabase.co';
 const SB_KEY='sb_publishable_OFMpmcKe5l6MbyGqRa4xgQ_Y1vvgH5V';
-const APP_VERSION='1.4';
+const APP_VERSION='1.5';
+/* ---- PRO (Whop) ---- */
+const FREE_CASES=['sara'],FREE_EXAMS=['ex_as'];
+const WHOP_MONTHLY_URL='https://whop.com/checkout/plan_lvmRqqocbE1Co';
+const WHOP_LIFETIME_URL='https://whop.com/checkout/plan_h9OEo63QFsu0d';
+const PRICE_MONTHLY='$15 / month',PRICE_LIFETIME='$29 lifetime';
+function isPro(){const p=sbProfile;if(!p)return false;if(p.plan==='lifetime')return true;if(p.plan==='pro')return !p.pro_until||new Date(p.pro_until)>new Date();return false;}
+function caseLocked(id){return !FREE_CASES.includes(id)&&!FREE_EXAMS.includes(id)&&!isPro();}
+function proBadge(){return '<span style="background:linear-gradient(90deg,#f5d042,#f39c4a);color:#2a1a00;font-size:10px;font-weight:800;border-radius:6px;padding:2px 6px;margin-left:6px;vertical-align:middle">🔒 PRO</span>';}
+function showUpgrade(){
+  const perks=['All 11 simulator cases — shock, sepsis, trauma, AAA, crash C-section…','All 6 CVS clinical-exam patients with heart sounds','Every difficulty level, leaderboard & full stats','New cases as they are released'];
+  let body;
+  if(!sb) body=`<p>Upgrading needs an internet connection and the game running on the live website.</p><div class="row"><button class="btn primary" onclick="hideModal()">OK</button></div>`;
+  else if(!sbUser) body=`<p>Create a free account first — Pro is unlocked on your account, so use the <b>same email</b> at checkout.</p><div class="row"><button class="btn" onclick="hideModal()">Later</button><button class="btn primary" onclick="hideModal();openAuth('signup')">Create free account</button></div>`;
+  else{
+    const btn=(url,label,sub,primary)=>url?`<a class="btn ${primary?'primary':''}" style="flex:1;text-align:center;text-decoration:none;display:block;color:${primary?'#05201d':'var(--text)'}" href="${url}" target="_blank" rel="noopener" onclick="setTimeout(()=>proChecking(),800)">${label}<br><small style="font-weight:500;opacity:.8">${sub}</small></a>`:`<button class="btn" style="flex:1;opacity:.5" disabled>${label}<br><small>link not set</small></button>`;
+    body=`<p style="margin:4px 0 10px">Pay on Whop with <b>${esc(sbUser.email)}</b> — Pro unlocks automatically within a minute.</p>
+     <div class="row">${btn(WHOP_MONTHLY_URL,PRICE_MONTHLY,'cancel anytime',false)}${btn(WHOP_LIFETIME_URL,PRICE_LIFETIME,'pay once, keep forever',true)}</div>
+     <div class="row"><button class="btn small" onclick="refreshPro()">I've paid — check my Pro status</button><button class="btn small" onclick="hideModal()">Not now</button></div><div class="authMsg" id="proMsg"></div>`;
+  }
+  showModal(`<h2>⭐ AesthesiaSim Pro</h2><ul style="font-size:14px;line-height:1.6;padding-left:18px;margin:6px 0 10px">${perks.map(x=>`<li>${x}</li>`).join('')}</ul>${body}`);
+}
+async function refreshPro(){
+  if(!sb||!sbUser) return;
+  try{const {data}=await sb.from('profiles').select('*').eq('id',sbUser.id).maybeSingle();if(data) sbProfile=data;}catch(e){}
+  updAcct();const m=$('#proMsg');
+  if(isPro()){if(m){m.className='authMsg ok';m.textContent='Pro unlocked ✓ Enjoy!';}setTimeout(()=>{hideModal();if($('#cases').classList.contains('active'))openCases();if($('#excases').classList.contains('active'))openExams();},900);}
+  else if(m){m.className='authMsg err';m.textContent='Not active yet — payments can take a minute. Make sure you paid with '+sbUser.email+'.';}
+}
+function proChecking(){let n=0;const iv=setInterval(()=>{n++;refreshPro();if(isPro()||n>20)clearInterval(iv);},6000);}
 let sb=null,sbUser=null,sbProfile=null,authMode='signin';
 const memStore={};
 const safeStorage={getItem:k=>{try{return localStorage.getItem(k)}catch(e){return memStore[k]??null}},setItem:(k,v)=>{try{localStorage.setItem(k,v)}catch(e){memStore[k]=v}},removeItem:k=>{try{localStorage.removeItem(k)}catch(e){delete memStore[k]}}};
@@ -726,7 +756,8 @@ async function setUser(u){
 function myName(){return (sbProfile&&sbProfile.display_name)||(sbUser&&sbUser.email&&sbUser.email.split('@')[0])||'Player';}
 function updAcct(){
   const b=$('#acctBtn');if(!b) return;
-  b.innerHTML=sbUser?`👤 <b>${esc(myName())}</b>`:(sb?'👤 Sign in to save scores':'👤 Offline · guest');
+  b.innerHTML=sbUser?`👤 <b>${esc(myName())}</b>${isPro()?' <span style="color:#f5d042">⭐ PRO</span>':''}`:(sb?'👤 Sign in to save scores':'👤 Offline · guest');
+  const ub=$('#upgradeBtn');if(ub) ub.style.display=isPro()?'none':'block';
   $('#adminBtn').style.display=sbProfile&&sbProfile.is_admin?'block':'none';
 }
 function acctClick(){if(!sb){showModal(`<h2>Playing offline</h2><p>Online accounts need an internet connection and the game running on aesthesiasim.com. You can still play as a guest — scores are saved on this device.</p><div class="row"><button class="btn primary" onclick="hideModal()">OK</button></div>`);return;}
@@ -875,22 +906,32 @@ async function loadBoard(){
 /* ---- admin ---- */
 function openAdmin(){show('admin');loadAdmin();}
 function caseName(id){const e=typeof EXAMS!=='undefined'&&EXAMS.find(x=>x.id===id);if(e)return '🩺 '+e.name+' · CVS exam';const c=CASES.find(x=>x.id===id);return c?c.name+' · '+c.proc.split('—')[0].trim():id;}
+function planCell(p){
+  const active=p.plan==='lifetime'||(p.plan==='pro'&&(!p.pro_until||new Date(p.pro_until)>new Date()));
+  const lbl=p.plan==='lifetime'?'⭐ Lifetime':active?`⭐ Pro${p.pro_until?'<br><small class="muted">to '+new Date(p.pro_until).toLocaleDateString()+'</small>':''}`:'Free';
+  return `${lbl}<br>${active?`<button class="btn small" style="padding:3px 7px;margin-top:3px" onclick="adminSetPlan('${p.id}','free')">Revoke</button>`:`<button class="btn small" style="padding:3px 7px;margin-top:3px" onclick="adminSetPlan('${p.id}','lifetime')">Grant</button>`}`;
+}
+async function adminSetPlan(id,plan){
+  try{const {error}=await sb.rpc('admin_set_plan',{p_user:id,p_plan:plan,p_until:null});if(error) throw error;loadAdmin();}
+  catch(e){showModal(`<h2>Couldn't change plan</h2><p>${esc(niceErr(e))}</p><div class="row"><button class="btn primary" onclick="hideModal()">OK</button></div>`);}
+}
 async function loadAdmin(){
   const body=$('#adminBody');body.innerHTML='<p class="muted" style="text-align:center;margin-top:30px">Loading…</p>';
   try{
-    const [{data:o,error:e1},{data:pl,error:e2}]=await Promise.all([sb.rpc('admin_overview'),sb.rpc('admin_players',{p_limit:300})]);
+    const [{data:o,error:e1},{data:pl,error:e2},{data:pc}]=await Promise.all([sb.rpc('admin_overview'),sb.rpc('admin_players',{p_limit:300}),sb.rpc('admin_pro_count')]);
+    if(o) o.pro_users=pc??0;
     if(e1||e2) throw (e1||e2);
     const tile=(l,v)=>`<div>${l}<b>${v??0}</b></div>`;
     const maxDay=Math.max(1,...(o.games_per_day||[]).map(d=>d.games));
     const maxM=Math.max(1,...(o.top_mistakes||[]).map(m=>m.n));
     body.innerHTML=`
-    <div class="card"><h3>Players</h3><div class="statGrid">${tile('Total players',o.players_total)}${tile('New today',o.players_today)}${tile('New this week',o.players_7d)}${tile('Active this week',o.active_7d)}</div></div>
+    <div class="card"><h3>Players</h3><div class="statGrid">${tile('Total players',o.players_total)}${tile('⭐ Pro users',o.pro_users)}${tile('New today',o.players_today)}${tile('New this week',o.players_7d)}${tile('Active this week',o.active_7d)}</div></div>
     <div class="card"><h3>Games</h3><div class="statGrid">${tile('Cases played',o.games_total)}${tile('Played today',o.games_today)}${tile('Survival rate',(o.survival_rate??0)+'%')}${tile('Average score',o.avg_score)}</div></div>
     <div class="card"><h3>Games per day (30 days)</h3>${(o.games_per_day||[]).length?`<div class="bars">${o.games_per_day.map(d=>`<div title="${d.day}: ${d.games} games, ${d.players} players" style="height:${Math.max(3,d.games/maxDay*100)}%"></div>`).join('')}</div><div class="muted" style="font-size:11px;display:flex;justify-content:space-between;margin-top:4px"><span>${o.games_per_day[0].day}</span><span>${o.games_per_day[o.games_per_day.length-1].day}</span></div>`:'<p class="muted">No games yet</p>'}</div>
     <div class="card"><h3>Cases</h3><table class="tbl"><tr><th>Case</th><th>Plays</th><th>Deaths</th><th>Avg</th><th>Best</th></tr>${(o.by_case||[]).map(c=>`<tr><td>${esc(caseName(c.case_id))}</td><td class="n">${c.plays}</td><td class="n" style="color:#ff9d9d">${c.deaths} <small class="muted">(${Math.round(c.deaths/c.plays*100)}%)</small></td><td class="n">${c.avg_score}</td><td class="n">${c.best_score}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">No games yet</td></tr>'}</table></div>
     <div class="card"><h3>By difficulty</h3><table class="tbl"><tr><th>Level</th><th>Plays</th><th>Survival</th><th>Avg score</th></tr>${(o.by_difficulty||[]).map(d=>`<tr><td>${esc(DIFF[d.difficulty]?DIFF[d.difficulty].name:d.difficulty)}</td><td class="n">${d.plays}</td><td class="n">${d.survival_rate}%</td><td class="n">${d.avg_score}</td></tr>`).join('')}</table></div>
     <div class="card"><h3>Most common mistakes</h3>${(o.top_mistakes||[]).map(m=>`<div style="font-size:13px;margin-top:8px;display:flex;justify-content:space-between"><span>${esc(m.mistake.replace(/_/g,' '))}</span><b style="font-family:var(--mono)">${m.n}</b></div><div class="bar" style="width:${m.n/maxM*100}%"></div>`).join('')||'<p class="muted">None yet</p>'}</div>
-    <div class="card"><h3>Players (${(pl||[]).length})</h3><div style="overflow-x:auto"><table class="tbl"><tr><th>Player</th><th>Role</th><th>Games</th><th>Survived</th><th>Best</th><th>Last played</th><th>Joined</th></tr>${(pl||[]).map(p=>`<tr><td>${esc(p.display_name||'—')}<br><small class="muted">${esc(p.email||'')}</small>${p.country?`<br><small class="muted">${esc(p.country)}</small>`:''}</td><td>${esc(p.role||'—')}</td><td class="n">${p.games}</td><td class="n">${p.survived}</td><td class="n">${p.best_score??'—'}</td><td>${p.last_game?new Date(p.last_game).toLocaleDateString():'—'}</td><td>${new Date(p.created_at).toLocaleDateString()}</td></tr>`).join('')}</table></div></div>
+    <div class="card"><h3>Players (${(pl||[]).length})</h3><div style="overflow-x:auto"><table class="tbl"><tr><th>Player</th><th>Plan</th><th>Role</th><th>Games</th><th>Survived</th><th>Best</th><th>Last played</th><th>Joined</th></tr>${(pl||[]).map(p=>`<tr><td>${esc(p.display_name||'—')}<br><small class="muted">${esc(p.email||'')}</small>${p.country?`<br><small class="muted">${esc(p.country)}</small>`:''}</td><td style="white-space:nowrap">${planCell(p)}</td><td>${esc(p.role||'—')}</td><td class="n">${p.games}</td><td class="n">${p.survived}</td><td class="n">${p.best_score??'—'}</td><td>${p.last_game?new Date(p.last_game).toLocaleDateString():'—'}</td><td>${new Date(p.created_at).toLocaleDateString()}</td></tr>`).join('')}</table></div></div>
     <div style="height:16px"></div>`;
   }catch(e){body.innerHTML=`<div class="card"><p class="authMsg err">${esc(/Not authorised/i.test(e.message||'')?'This account is not an admin.':niceErr(e))}</p></div>`;}
 }
@@ -903,10 +944,12 @@ function openCases(){
   $('#caseDiff').textContent=DIFF[diff].name;
   $('#caseList').innerHTML=CASES.map((c,i)=>{
     const b=st.best&&st.best[c.id+'_'+diff];
-    return `<button class="caseCard" onclick="openPreop(${i})">${avatar(c)}<div style="flex:1"><h3>${c.name}, ${c.age}${c.sex}</h3><div class="sub">${c.proc}</div><div class="sub">${c.wt} kg · Surgical risk: <b style="color:${c.surgRisk==='Very high'?'#ff8080':c.surgRisk==='High'?'#f5d042':'inherit'}">${c.surgRisk}</b></div><div class="stars">${'★'.repeat(c.stars)}${'☆'.repeat(3-c.stars)}</div>${b?`<div class="best">Best: ${b} pts</div>`:''}</div><span style="color:var(--teal);font-size:20px">›</span></button>`}).join('')+'<div style="height:20px"></div>';
+    const lk=caseLocked(c.id);
+    return `<button class="caseCard" style="${lk?'opacity:.72':''}" onclick="${lk?'showUpgrade()':`openPreop(${i})`}">${avatar(c)}<div style="flex:1"><h3>${c.name}, ${c.age}${c.sex}${lk?proBadge():''}</h3><div class="sub">${c.proc}</div><div class="sub">${c.wt} kg · Surgical risk: <b style="color:${c.surgRisk==='Very high'?'#ff8080':c.surgRisk==='High'?'#f5d042':'inherit'}">${c.surgRisk}</b></div><div class="stars">${'★'.repeat(c.stars)}${'☆'.repeat(3-c.stars)}</div>${b?`<div class="best">Best: ${b} pts</div>`:''}</div><span style="color:var(--teal);font-size:20px">›</span></button>`}).join('')+'<div style="height:20px"></div>';
   show('cases');
 }
 function openPreop(i){
+  if(caseLocked(CASES[i].id)){showUpgrade();return;}
   curCaseIdx=i;const c=CASES[i];preopSel={asa:null,airway:null};
   const bmi=(c.wt/((c.ht/100)**2)).toFixed(1);
   const labNames={Hb:'Hb g/dL',K:'K⁺ mmol/L',Cr:'Creat µmol/L',Glu:'Glucose',Plt:'Platelets',INR:'INR',WCC:'WCC',CRP:'CRP',CK:'CK U/L'};
@@ -925,7 +968,7 @@ function openPreop(i){
 }
 function pickPre(k,v,el){preopSel[k]=v;el.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('on'));el.classList.add('on');updEnter();}
 function updEnter(){const ok=preopSel.asa&&preopSel.airway;$('#enterOR').style.opacity=ok?1:.5;$('#enterOR').textContent=ok?'Enter theatre →':'Complete your assessment';}
-function enterOR(){if(!(preopSel.asa&&preopSel.airway)) return; initAudio(); startGame(curCaseIdx);}
+function enterOR(){if(!(preopSel.asa&&preopSel.airway)) return; if(caseLocked(CASES[curCaseIdx].id)){showUpgrade();return;} initAudio(); startGame(curCaseIdx);}
 function retryCase(){openPreop(curCaseIdx);}
 
 /* ================== GAME INIT ================== */
@@ -2563,10 +2606,11 @@ function openExams(){
   initAudio();
   const st=loadStats();$('#exDiffLbl').textContent=DIFF[diff].name;
   $('#exList').innerHTML=`<div class="card" style="font-size:13px;line-height:1.5"><b style="color:var(--teal)">How it works:</b> open <b>Tools</b>, pick a tool, then tap the patient — just like the simulator. Look, feel, listen (headphones recommended; turn off silent mode on iPhone), attach monitors, order tests if you need them (they cost points), then submit every abnormality, your diagnosis and the anaesthetic implications.</div>`+
-   EXAMS.map((c,i)=>{const b=st.best&&st.best[c.id+'_'+diff];return `<button class="caseCard" onclick="startExam(${i})">${avatar(c)}<div style="flex:1"><h3>${c.name}, ${c.age}${c.sex}</h3><div class="sub">${c.title}</div><div class="sub">${c.hpi.slice(0,70)}…</div><div class="stars">${'★'.repeat(c.stars)}${'☆'.repeat(3-c.stars)}</div>${b?`<div class="best">Best: ${b} pts</div>`:''}</div><span style="color:var(--teal);font-size:20px">›</span></button>`}).join('')+'<div style="height:20px"></div>';
+   EXAMS.map((c,i)=>{const b=st.best&&st.best[c.id+'_'+diff];const lk=caseLocked(c.id);return `<button class="caseCard" style="${lk?'opacity:.72':''}" onclick="${lk?'showUpgrade()':`startExam(${i})`}">${avatar(c)}<div style="flex:1"><h3>${c.name}, ${c.age}${c.sex}${lk?proBadge():''}</h3><div class="sub">${c.title}</div><div class="sub">${c.hpi.slice(0,70)}…</div><div class="stars">${'★'.repeat(c.stars)}${'☆'.repeat(3-c.stars)}</div>${b?`<div class="best">Best: ${b} pts</div>`:''}</div><span style="color:var(--teal);font-size:20px">›</span></button>`}).join('')+'<div style="height:20px"></div>';
   show('excases');
 }
 function startExam(i){
+  if(caseLocked(EXAMS[i].id)){showUpgrade();return;}
   initAudio();exStop();exCUclose();
   const c=EXAMS[i],lk=EX_LOOK[c.id];
   EX={idx:i,c,lk,sel:null,tool:null,pos:'supine',zoom:false,bell:false,notes:[],used:{},done:{},mon:{},selA:{f:new Set(),d:new Set(),p:new Set()},t0:Date.now(),listened:0,L:{}};
